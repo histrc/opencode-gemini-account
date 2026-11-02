@@ -1,0 +1,72 @@
+{
+  "name": "opencode-gemini-account",
+  "version": "0.8.0",
+  "repository": { "type": "git", "url": "https://github.com/histrc/opencode-gemini-account.git" },
+  "homepage": "https://github.com/histrc/opencode-gemini-account#readme",
+  "bugs": { "url": "https://github.com/histrc/opencode-gemini-account/issues" },
+  "description": "OpenCode 2 Google account providers with automatically managed AIStudio2API and Gemini Web backends",
+  "type": "module",
+  "main": "./managed.mjs",
+  "exports": { ".": "./managed.mjs", "./browser": "./index.mjs" },
+  "files": [
+    "index.mjs",
+    "managed.mjs",
+    "vendor/",
+    "src/",
+    "extension/",
+    "scripts/",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY.md",
+    "CHANGELOG.md",
+    "EXTENSION_SETUP.md",
+    "NEW_MACHINE.md",
+    "IMAGE_GENERATION.md",
+    "install.cmd",
+    "connect-studio.cmd",
+    "test-call.cmd",
+    "setup-extension.cmd"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "test:browser": "node --test test/browser/*.test.mjs",
+    "check": "tsc --noEmit",
+    "install:opencode": "node scripts/install.mjs --v2 --managed",
+    "doctor": "node scripts/doctor.mjs",
+    "browser:install": "playwright-core install chromium",
+    "configure": "node scripts/configure.mjs",
+    "verify": "node scripts/verify.mjs",
+    "test:native": "node --test test/native/*.test.mjs",
+    "usage": "node scripts/media.mjs usage",
+    "image": "node scripts/media.mjs image",
+    "connect": "node scripts/local.mjs connect",
+    "smoke:opencode": "node scripts/local.mjs smoke",
+    "setup:extension": "node scripts/extension-setup.mjs",
+    "backend": "node scripts/managed.mjs",
+    "verify:managed": "node scripts/verify-managed.mjs --live",
+    "verify:image:managed": "node scripts/verify-managed-image.mjs --live",
+    "install:managed": "node scripts/install.mjs --v2 --managed",
+    "install:opencode:v2": "node scripts/install.mjs --v2 --managed",
+    "install:browser": "node scripts/install.mjs --v2"
+  },
+  "dependencies": {
+    "@opencode/ai": "2.2.5",
+    "@opencode/plugin": "2.2.5",
+    "ajv": "8.20.0",
+    "effect": "4.0.6",
+    "playwright-core": "1.64.1",
+    "ws": "8.22.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@ai-sdk/openai-compatible": "2.0.41",
+    "@opencode-ai/plugin": "1.19.5",
+    "@types/node": "^24.0.0",
+    "ai": "6.0.248",
+    "typescript": "^5.9.3"
+  }
+}

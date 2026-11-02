@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenCode Gemini Bridge</title>
+<style>
+  body{font:14px system-ui,sans-serif;width:320px;margin:16px;color:#202124}label{display:block;margin-bottom:6px;font-weight:600}input{box-sizing:border-box;width:100%;padding:8px;border:1px solid #bbb;border-radius:6px}button{margin-top:10px;padding:8px 14px;border:0;border-radius:6px;background:#1a73e8;color:white}p{line-height:1.45;color:#5f6368}#status{color:#137333}
+</style>
+<label for="token">本机配对令牌</label>
+<input id="token" type="password" autocomplete="off" spellcheck="false">
+<button id="save">保存并连接</button>
+<p id="status">尚未检查</p>
+<p>扩展仅能访问 AI Studio 页面，不具备 Cookie、密码或其他网站权限。</p>
+<script type="module" src="popup.js"></script>
+</html>
