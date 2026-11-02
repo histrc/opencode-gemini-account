@@ -7,6 +7,7 @@ import { studioSettings, listStudioModels } from '../vendor/magpie/lib/studio.mj
 import { importCookie, parseCookieInput, validateProxyURL } from '../vendor/magpie/lib/setup.mjs';
 import { prepareCamoufox } from './camoufox-install.mjs';
 import { managedStudioProxy } from './studio-network.mjs';
+import { studioChatMode, nonstreamRequest, completionAsSSE } from './studio-chat-mode.mjs';
 
 export const MANAGED_PROVIDERS = { studio: 'aistudio-account', web: 'gemini-web-account' };
 
@@ -21,7 +22,7 @@ export function studioConnectionError(error) {
 export class ManagedBackends {
   constructor(settings, studio = {}) {
     this.settings = settings;
-    this.studio = { accounts: studioAccounts, admin: studioAdmin, prepareBrowser: prepareCamoufox, fetch: globalThis.fetch, ...studio };
+    this.studio = { accounts: studioAccounts, admin: studioAdmin, prepareBrowser: prepareCamoufox, fetch: globalThis.fetch, forward, ...studio };
     // These optional overrides are for explicit migrations and acceptance tests.
     // A fresh installation always owns both directories below its own data root.
     this.directories = {
@@ -118,14 +119,16 @@ export class ManagedBackends {
     const image = /^\/v1beta\/models\/(gemini-[a-zA-Z0-9._-]+):generateContent$/.exec(proxyURL.pathname);
     if (image && backend === 'studio') return this.fetchImage(image[1], init);
     if (proxyURL.pathname !== '/v1/chat/completions') throw new Error('不支持的模型调用路径');
+    const buffered = backend === 'studio' && await studioChatMode(this.settings.directory) === 'nonstream' ? nonstreamRequest(init) : null;
     const local = await this.ensure(backend);
     const auth = { type: 'api', key: local.apiKey, metadata: { baseURL: local.baseURL, ...(backend === 'studio' ? { mode: 'studio' } : {}) } };
     const options = backend === 'studio'
       ? studioSettings({ studio: { baseURL: local.baseURL } })
       : webSettings({ baseURL: local.baseURL, allowTools: true, allowImages: true });
-    // Reuse upstream's request, tool, image and citation conversion. Its response
-    // body remains a stream; do not serialize website prompts or buffer SSE.
-    return await forward(local.baseURL + '/chat/completions', init, async () => auth, options);
+    // Default requests keep upstream SSE. The explicit compatibility mode sends
+    // one non-streaming request and adapts its completed text/tools for the host.
+    const response = await (backend === 'studio' ? this.studio.forward : forward)(local.baseURL + '/chat/completions', buffered ?? init, async () => auth, options);
+    return buffered ? completionAsSSE(response, init.signal) : response;
   }
 
   async fetchImage(modelID, init) {
@@ -148,7 +151,7 @@ export class ManagedBackends {
   async status(backend) {
     if (backend === 'studio') {
       const status = await studioStatus({ dataDir: this.directories.studio });
-      return { backend, status: status.status, state: status.state, version: status.version, accounts: status.accounts };
+      return { backend, status: status.status, state: status.state, version: status.version, accounts: status.accounts, chatMode: await studioChatMode(this.settings.directory) };
     }
     return { backend, installed: Boolean(this.existing(backend)), directory: this.directories.web };
   }

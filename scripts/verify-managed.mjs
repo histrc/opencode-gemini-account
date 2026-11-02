@@ -6,10 +6,12 @@ import { ManagedBackends } from '../src/managed-backends.mjs';
 import { resolveOpenCode } from '../src/opencode-command.mjs';
 import { runProcess } from './verify.mjs';
 import { compareNativeRequest } from '../src/managed-diagnostics.mjs';
+import { studioChatMode } from '../src/studio-chat-mode.mjs';
 
 if (!process.argv.includes('--live')) throw new Error('此验收会消耗真实模型额度，请使用 --live');
 const diagnose = process.argv.includes('--diagnose-request');
 const settings = await loadSettings();
+const chatMode = await studioChatMode(settings.directory);
 const manager = new ManagedBackends(settings);
 const catalog = await manager.catalog('studio', { install: true });
 const model = process.env.GEMINI_ACCOUNT_VERIFY_MODEL || 'gemini-3.5-flash-lite';
@@ -60,7 +62,7 @@ function event(line) {
     console.log(`原生工具 ${item.part.tool} 已完成`);
   }
 }
-console.log(diagnose ? '正在截取临时项目的 OpenCode 首轮请求；截取阶段不发生成请求、不执行工具。' : '开始真实 OpenCode 原生工具闭环（仅在临时测试项目操作）。');
+console.log(diagnose ? '正在截取临时项目的 OpenCode 首轮请求；截取阶段不发生成请求、不执行工具。' : `开始真实 OpenCode 原生工具闭环（仅在临时测试项目操作；chatMode=${chatMode}）。`);
 const run = await runProcess(command.file, [...command.prefix, 'run', '--standalone', '--model', providerModel, '--agent', 'managed-verify', '--format', 'json', '--title', 'Managed backend baseline', 'Use read on calculator.cjs, then edit to fix addition, then shell to run exactly node check.cjs. Report the actual test token.'], {
   env, cwd: project, timeoutMs: 240000,
   stdout(chunk) { pending += chunk; let index; while ((index = pending.indexOf('\n')) >= 0) { event(pending.slice(0, index)); pending = pending.slice(index + 1); } },
@@ -93,7 +95,7 @@ if (checkerUnchanged && fileChanged) {
   const check = await runProcess(process.execPath, ['check.cjs'], { cwd: project, stdout: chunk => { output += chunk; } });
   independent = check.code === 0 && output.trim() === token;
 }
-const report = { mode: 'real-google-native-backend', model, elapsedMs: Date.now() - started, firstTextMs, hostExit: run.code, errors, tools,
+const report = { mode: 'real-google-native-backend', chatMode, model, elapsedMs: Date.now() - started, firstTextMs, hostExit: run.code, errors, tools,
   checks: { read: tools.some(t => t.name === 'read'), edit: tools.some(t => t.name === 'edit'), shell: tools.some(t => t.name === 'shell' && t.exit === 0 && t.testToken), checkerUnchanged, fileChanged, independent, finalToken: text.includes(token) } };
 report.passed = run.code === 0 && errors === 0 && Object.values(report.checks).every(Boolean);
 const reportPath = path.join(root, 'report.json');

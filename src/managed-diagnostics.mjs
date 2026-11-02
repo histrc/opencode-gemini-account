@@ -1,11 +1,15 @@
 // Only fixed classifications leave this module. Never echo upstream bodies:
 // they may include prompts, account identifiers, credentials or service URLs.
-async function readBoundedText(response, limit = 65536, timeoutMs = 5000) {
+async function readBoundedText(response, limit = 65536, timeoutMs = 5000, signal) {
   if (!response.body) return null;
   const reader = response.body.getReader();
   const chunks = [];
   let size = 0;
-  const timer = setTimeout(() => { void reader.cancel().catch(() => {}); }, timeoutMs);
+  let cancelled = false;
+  const cancel = () => { cancelled = true; void reader.cancel().catch(() => {}); };
+  const timer = setTimeout(cancel, timeoutMs);
+  signal?.addEventListener('abort', cancel, { once: true });
+  if (signal?.aborted) cancel();
   try {
     for (;;) {
       const { done, value } = await reader.read();
@@ -14,12 +18,12 @@ async function readBoundedText(response, limit = 65536, timeoutMs = 5000) {
       if (size > limit) return null;
       chunks.push(value);
     }
-    return Buffer.concat(chunks).toString('utf8');
-  } finally { clearTimeout(timer); await reader.cancel().catch(() => {}); reader.releaseLock(); }
+    return cancelled ? null : Buffer.concat(chunks).toString('utf8');
+  } finally { clearTimeout(timer); signal?.removeEventListener('abort', cancel); await reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
 
-export async function readBoundedJSON(response, limit = 65536, timeoutMs = 5000) {
-  try { return JSON.parse(await readBoundedText(response, limit, timeoutMs)); } catch { return null; }
+export async function readBoundedJSON(response, limit = 65536, timeoutMs = 5000, signal) {
+  try { return JSON.parse(await readBoundedText(response, limit, timeoutMs, signal)); } catch { return null; }
 }
 
 export function classifyFailure(status, body) {

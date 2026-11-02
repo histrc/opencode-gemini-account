@@ -34,11 +34,11 @@
 
 生成成功会返回图片附件和真实保存路径。文件保存在插件数据目录的 generated/<随机目录>/ 下，自动检查 PNG/JPEG/WebP/GIF 文件头与 MIME 类型，不把模型的文字描述当作图片文件。
 
-## 生图请求诊断（当前源码新增）
+## 生图请求诊断
 
 若生图提示 HTTP 403 / 协议错误码 7，先区分聊天模型请求与图片模型请求。包含“调用生图工具”的用户消息并不能证明图片请求已实际发出。提供商应为 **AI Studio 账号 · OpenCode**；旧的 **Google AI Studio** 配置可能走另一套接口。
 
-使用 0.8.1 安装时，可从本仓库当前源码补充 scripts/diagnose-image.mjs，在插件目录执行：
+0.8.2 已包含 scripts/diagnose-image.mjs；旧的 0.8.1 安装可先从本仓库补充该文件。在插件目录执行：
 
 ```powershell
 node scripts/diagnose-image.mjs

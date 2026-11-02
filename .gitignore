@@ -19,6 +19,7 @@ node_modules/
 /managed-image-verification/
 /settings.json
 /managed-network.json
+/managed-chat.json
 /managed-catalog-*.json
 /managed-debug-*.json
 /setup-studio-progress.json
