@@ -2,7 +2,7 @@
 
 通过原生 OpenCode 插件连接 Google AI Studio 与 Gemini Web，自动管理所需的本机后端。
 
-**当前版本：0.8.0，实验版。** 提供 AI Studio 对话、识图、编程工具调用、生图和参考图编辑。Gemini Web 已接入后端部署及账号连接流程，仍处于实验阶段。
+**当前版本：0.8.1，实验版。** 提供 AI Studio 对话、识图、编程工具调用、生图和参考图编辑。Gemini Web 已接入后端部署及账号连接流程，仍处于实验阶段。
 
 ## 功能与运行方式
 
@@ -40,6 +40,8 @@ node scripts/install.mjs --v2 --managed
 网络需能访问 GitHub 下载站点及 Google。连接时可填写本机网络代理，已有可用 TUN 可留空。网络代理不是要求用户自行搭建 API 服务。
 
 `connect-studio.cmd` 可连接账号，`test-call.cmd` 可发送一条真实短请求。新机、数据目录、旧服务占用与网络兼容说明见 [NEW_MACHINE.md](NEW_MACHINE.md)。安装器保留原有全局 `opencode.json`；若保留了旧提供商，请确认选中的是新入口。
+
+出现 HTTP 403 / 协议错误码 7 时，可按 [工具请求诊断](NEW_MACHINE.md#工具请求诊断) 对照纯文本和附带函数声明的请求。0.8.1 增加诊断与错误提示，不承诺消除 Google 的拒绝响应。
 
 ## 生图与参考图编辑
 

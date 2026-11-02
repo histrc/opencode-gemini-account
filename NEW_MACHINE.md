@@ -37,6 +37,23 @@ Gemini Web：当前复用后端的专用网页会话连接方式，需要本人�
 
 若提示账号由另一个 AIStudio2API runtime 使用，表示同一账号已有其他服务占用。先停止旧实例及其自动重启，再重试连接；不必删除账号、清理浏览器或重复登录。插件不会擅自终止其他应用的服务，也不会删除或绕过账号运行锁。
 
+## 工具请求诊断
+
+HTTP 403、协议错误码 7、`The caller does not have permission` 表示请求被拒绝，仅凭这条错误不能确定为账号缺少工具权限。先保留现有账号和网络设置，在插件目录的 PowerShell 中执行：
+
+```powershell
+node scripts/diagnose-tools.mjs
+node scripts/diagnose-tools.mjs --live --model gemini-3.5-flash-lite
+```
+
+第一条只读取版本、后端状态和已缓存的模型目录；第二条必须改成出错时使用的实际模型 ID。它消耗两次短生成请求的额度，同样的文本和参数只增加一个函数声明，不执行函数、不自动重发，不输出原始响应、账号标识、Cookie 或密钥。结果仅显示在终端，不自动保存或上传报告。若配置了多个账号，两次请求可能被分配给不同账号，不能当作同账号对照。
+
+- `TOOLS_REQUEST_REJECTED`：文本被接受，附带函数声明时 Google 拒绝；仍需检查模型、通道、后端兼容性或账号状态，不能直接判定为账号工具权限。
+- `DECLARATIONS_ACCEPTED_TOOL_LOOP_NOT_TESTED`：两条请求都被接受；尚未验收 OpenCode 的文件读写、命令执行、多轮工具结果或流式请求。
+- `INCONCLUSIVE`：当前对照不足以定位工具问题，结合两条状态分别检查。
+
+0.8.1 保持原有后端版本，增加上述诊断及安全的错误分类提示；没有自动关闭编程工具、换模型或升级后端。迁移安装目录时，重新执行 install.cmd 注册新路径；若旧目录中存在手工指定数据目录的 .managed-install.json，需沿用原有数据目录，避免创建第二个账号运行实例。
+
 ## 后续功能
 
 继续完善跨设备部署与 Gemini Web 账号调用。AI Studio 使用原生 Function Calling；Gemini Web 的工具实现和能力边界需分别处理。Gemini Web 生图、搜索来源、用量展示和后端升级界面仍待完善。

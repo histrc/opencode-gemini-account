@@ -100,3 +100,24 @@ test('managed native protocol delivers incremental text before the SSE body ends
     assert.ok(events.some(event => JSON.stringify(event).includes('IAL')));
   } finally { release(); unregister(); await ai.dispose(); }
 });
+
+test('managed permission errors stay non-retryable and expose no upstream account data', async () => {
+  const key = randomUUID();
+  const ai = make();
+  let calls = 0;
+  const unregister = registerManagedTransport(key, async () => {
+    calls++;
+    return Response.json({ error: { message: 'The caller does not have permission: private@example.invalid Bearer fixture-secret' } }, { status: 403 });
+  });
+  try {
+    await assert.rejects(async () => {
+      for await (const _event of ai.stream({ model: model('gemini-test', { transportKey: key, providerID: 'aistudio-account' }), prompt: 'hello' })) {}
+    }, error => {
+      const text = String(error);
+      assert.match(text, /PERMISSION_DENIED/);
+      assert.doesNotMatch(text, /private@|fixture-secret/);
+      return true;
+    });
+    assert.equal(calls, 1);
+  } finally { unregister(); await ai.dispose(); }
+});

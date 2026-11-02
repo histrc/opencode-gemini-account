@@ -1,6 +1,6 @@
 {
   "name": "opencode-gemini-account",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "repository": { "type": "git", "url": "https://github.com/histrc/opencode-gemini-account.git" },
   "homepage": "https://github.com/histrc/opencode-gemini-account#readme",
   "bugs": { "url": "https://github.com/histrc/opencode-gemini-account/issues" },
@@ -37,6 +37,7 @@
     "check": "tsc --noEmit",
     "install:opencode": "node scripts/install.mjs --v2 --managed",
     "doctor": "node scripts/doctor.mjs",
+    "diagnose:tools": "node scripts/diagnose-tools.mjs",
     "browser:install": "playwright-core install chromium",
     "configure": "node scripts/configure.mjs",
     "verify": "node scripts/verify.mjs",

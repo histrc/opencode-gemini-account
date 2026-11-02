@@ -2,6 +2,7 @@ import { Effect, Stream } from 'effect';
 import { OpenAICompatible } from '@opencode/ai/providers/openai-compatible';
 import { HttpTransport, Framing } from '@opencode/ai/route';
 import { AIError, InvalidRequestError } from '@opencode/ai/effect';
+import { managedFailureMessage } from './managed-diagnostics.mjs';
 
 const registry = Symbol.for('opencode-gemini-account.managed-transports');
 const routes = globalThis[registry] ??= new Map();
@@ -21,8 +22,7 @@ export function model(modelID, settings) {
         if (!transport) throw new Error('本机后端插件已卸载，请重启 OpenCode');
         const response = await transport(prepared.url, { method: 'POST', headers: prepared.headers, body: prepared.bodyText, signal });
         if (!response.ok || !response.body) {
-          await response.body?.cancel();
-          throw new Error(`本机模型请求失败（HTTP ${response.status}）；未自动重发，请检查账号和后端状态`);
+          throw new Error(await managedFailureMessage(response));
         }
         return { frames: Framing.sse.frame(Stream.fromAsyncIterable(response.body, () => failure('模型流式连接中断；未自动重发'))) };
       },
