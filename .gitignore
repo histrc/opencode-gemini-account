@@ -20,6 +20,7 @@ node_modules/
 /settings.json
 /managed-network.json
 /managed-chat.json
+/studio-inspection-*.txt
 /managed-catalog-*.json
 /managed-debug-*.json
 /setup-studio-progress.json

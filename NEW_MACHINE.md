@@ -87,6 +87,12 @@ node scripts/managed.mjs chat-mode studio stream
 
 开发和验收可用环境变量 GEMINI_ACCOUNT_STUDIO_CHAT_MODE=stream 或 nonstream 临时覆盖保存值。该模式仅适配 AI Studio 对话及原生函数调用；图片请求仍使用原有 generateContent 路径，图片 403 需单独诊断。兼容模式的错误、取消和无效响应不会触发插件自动重试，也不承诺解决账号资格或全部 403。
 
+## 后端只读检查（补充包）
+
+若账号就绪、最小请求能通过，但正式请求在流式和非流式下仍被拒绝，可把只读检查补充包解压到插件根目录，双击 inspect-studio.cmd。检查器核对 0.8.2 核心文件是否完整覆盖、OpenCode CLI 版本、后端运行引擎、通道、配置待重启状态、账号能力摘要和最近八条账本记录；只调用本机查询接口，不发生成请求、不刷新 Google 登录。
+
+检查结果显示在窗口，并保存为插件根目录的 studio-inspection-随机编号.txt。输出采用固定字段和分类，过滤账号标识、代理地址、Cookie、凭据、提示词和原始响应；文件不自动上传，也不纳入 Git 提交。检查器会在内存读取本机管理配置与记录以生成摘要，不能将原始 /api/config 或日志直接对外发送。没有账本记录时会报告空列表或查询不可用，不能据此声称调用成功。
+
 ## 后续功能
 
 继续完善跨设备部署与 Gemini Web 账号调用。AI Studio 使用原生 Function Calling；Gemini Web 的工具实现和能力边界需分别处理。Gemini Web 生图、搜索来源、用量展示和后端升级界面仍待完善。
