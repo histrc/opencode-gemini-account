@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compareToolRequests, diagnosticRequest, managedFailureMessage, readBoundedJSON } from '../src/managed-diagnostics.mjs';
+import { compareToolRequests, compareNativeRequest, nativeRequestVariants, diagnosticRequest, managedFailureMessage, readBoundedJSON } from '../src/managed-diagnostics.mjs';
 
 test('diagnostic changes only the tool declaration, sends once per case, and does not echo private bodies', async () => {
   const calls = [];
@@ -48,4 +48,49 @@ test('error inspection cancels oversized and stalled streams', async () => {
   cancelled = false;
   assert.equal(await readBoundedJSON(stalled, 20, 10), null);
   assert.equal(cancelled, true);
+});
+
+const native = () => ({ ...diagnosticRequest('gemini-test', true), stream: true, stream_options: { include_usage: true }, max_completion_tokens: 65536 });
+const denied = () => Response.json({ error: { message: 'The caller does not have permission secret@example.invalid' } }, { status: 403 });
+const accepted = () => Response.json({ choices: [{ message: { content: 'private response' } }] });
+
+test('native comparisons preserve the captured request and stop at the first accepted variation', async () => {
+  const original = native(), snapshot = structuredClone(original), calls = [];
+  const report = await compareNativeRequest({ fetch: async (_backend, _url, init) => {
+    const request = JSON.parse(init.body); calls.push(request);
+    return calls.length < 3 ? denied() : accepted();
+  } }, original);
+  assert.deepEqual(original, snapshot);
+  assert.equal(calls.length, 3);
+  assert.equal(report.candidateDifference, 'without_output_limit');
+  assert.equal(calls[0].stream, true);
+  assert.equal(calls[1].stream, false);
+  assert.equal(calls[1].stream_options, undefined);
+  const { max_completion_tokens, ...withoutLimit } = snapshot;
+  assert.deepEqual(calls[2], withoutLimit);
+  assert.doesNotMatch(JSON.stringify(report), /private|secret/);
+  const variants = nativeRequestVariants(original);
+  assert.equal(variants[3].body.tools[0].function.name, original.tools[0].function.name);
+  assert.deepEqual(variants[3].body.tools[0].function.parameters, { type: 'object', properties: {} });
+  assert.equal(variants[5].body.tools, undefined);
+});
+
+test('native diagnostics require a completed SSE response and never execute returned functions', async () => {
+  for (const [data, expected] of [
+    ['data: {"choices":[{"delta":{"tool_calls":[{"function":{"name":"diagnostic_echo","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}\n\ndata: [DONE]\n\n', 'ACCEPTED'],
+    ['data: {"choices":[{"delta":{"content":"private"},"finish_reason":null}]}\n\n', 'INCOMPLETE_STREAM'],
+    ['data: {"error":{"message":"The caller does not have permission private@example.invalid"}}\n\n', 'GOOGLE_PERMISSION_DENIED'],
+  ]) {
+    let calls = 0;
+    const report = await compareNativeRequest({ fetch: async () => {
+      calls++;
+      return calls > 1 ? accepted() : new Response(new ReadableStream({ start(controller) {
+        const bytes = new TextEncoder().encode(data);
+        controller.enqueue(bytes.slice(0, 17)); controller.enqueue(bytes.slice(17)); controller.close();
+      } }), { headers: { 'Content-Type': 'text/event-stream' } });
+    } }, native());
+    assert.equal(report.results[0].result, expected);
+    assert.equal(calls, expected === 'GOOGLE_PERMISSION_DENIED' ? 2 : 1);
+    assert.doesNotMatch(JSON.stringify(report), /private|arguments/);
+  }
 });

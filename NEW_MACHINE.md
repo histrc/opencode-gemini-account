@@ -54,6 +54,18 @@ node scripts/diagnose-tools.mjs --live --model gemini-3.5-flash-lite
 
 0.8.1 保持原有后端版本，增加上述诊断及安全的错误分类提示；没有自动关闭编程工具、换模型或升级后端。迁移安装目录时，重新执行 install.cmd 注册新路径；若旧目录中存在手工指定数据目录的 .managed-install.json，需沿用原有数据目录，避免创建第二个账号运行实例。
 
+### 最小工具声明成功、真实 OpenCode 首轮失败（当前源码新增）
+
+当前源码提供实际首轮请求的差异诊断。0.8.1 发行包需先从当前源码更新 `src/managed-diagnostics.mjs` 和 `scripts/verify-managed.mjs`，再执行：
+
+```powershell
+node scripts/verify-managed.mjs --live --diagnose-request
+```
+
+命令在临时测试项目中截取真实 OpenCode 首轮请求，截取时阻止生成和工具执行，读取后移除临时请求文件。诊断随后使用同一数据目录、同一型号请求后端，依次检查原始请求、非流式、移除输出上限、简化工具参数 Schema、短消息、移除工具。每个变体都基于原始请求独立构造，不累计修改；不会执行模型返回的工具。最多六条生成请求，遇到首个被接受的版本或非权限类失败即停止。
+
+输出只包含宿主版本、模型 ID、流式开关、输出上限、工具与消息数量、HTTP 状态和固定分类，不显示提示词、工具参数详情、账号或凭据，不自动上传结果。`candidateDifference` 只表示一次对照中出现的候选差异，仍需复验，不能排除账号调度、会话或服务状态变化。`ORIGINAL_ACCEPTED_TOOL_LOOP_NOT_TESTED` 表示原始请求单独重放被接受，尚未定位差异，也不能代替编程闭环验收。此模式不改变正式插件的工具、输出上限或流式策略。
+
 ## 后续功能
 
 继续完善跨设备部署与 Gemini Web 账号调用。AI Studio 使用原生 Function Calling；Gemini Web 的工具实现和能力边界需分别处理。Gemini Web 生图、搜索来源、用量展示和后端升级界面仍待完善。
