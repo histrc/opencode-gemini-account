@@ -10,9 +10,10 @@ test('proxy application stops only the owned backend before saving, preserves se
   const dataDir = path.join(directory, 'backends', 'studio');
   const calls = [];
   const manager = { settings: { directory }, directories: { studio: dataDir },
-    status: async () => ({ status: 'running', accounts: { busy: 0 }, chatMode: 'nonstream' }),
-    ensure: async backend => {
+    status: async () => ({ status: 'running', state: 'LAUNCHING', accounts: { busy: 0 }, chatMode: 'nonstream' }),
+    ensure: async (backend, managementOnly) => {
       calls.push('start'); assert.equal(backend, 'studio');
+      assert.equal(managementOnly, true);
       assert.deepEqual(JSON.parse(await readFile(path.join(directory, 'managed-network.json'), 'utf8')), { proxy: 'http://127.0.0.1:7897', studioIPv4: false, custom: 'preserved' });
       return {};
     } };
@@ -26,6 +27,7 @@ test('proxy application stops only the owned backend before saving, preserves se
       admin: async (_local, method, url) => { assert.equal(method, 'GET'); assert.equal(url, '/api/config'); return { active_proxy: 'http://127.0.0.1:7897' }; },
     });
     assert.equal(result.proxyApplied, true); assert.deepEqual(calls, ['probe', 'stop', 'start']);
+    assert.equal(result.generationReady, false);
     assert.equal(await readFile(path.join(dataDir, 'account-fixture'), 'utf8'), 'preserved');
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
