@@ -22,7 +22,7 @@ export function model(modelID, settings) {
         if (!transport) throw new Error('本机后端插件已卸载，请重启 OpenCode');
         const response = await transport(prepared.url, { method: 'POST', headers: prepared.headers, body: prepared.bodyText, signal });
         if (!response.ok || !response.body) {
-          throw new Error(await managedFailureMessage(response));
+          throw new Error(await managedFailureMessage(response, { modelID }));
         }
         return { frames: Framing.sse.frame(Stream.fromAsyncIterable(response.body, () => failure('模型流式连接中断；未自动重发'))) };
       },

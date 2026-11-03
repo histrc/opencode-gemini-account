@@ -37,6 +37,7 @@ test('request conversion changes only streaming fields and preserves native tool
   const { stream_options, ...expected } = payload;
   assert.deepEqual(body, { ...expected, stream: false });
   assert.equal(converted.headers.has('content-length'), false);
+  assert.equal(converted.headers.get('accept'), 'application/json');
   assert.equal(JSON.parse(init.body).stream, true);
   assert.equal(nonstreamRequest({ body: JSON.stringify({ stream: false }) }), null);
 });
@@ -78,6 +79,7 @@ test('manager uses one nonstream generation only when Studio compatibility mode 
     await saveStudioChatMode(directory, 'nonstream');
     const response = await manager.fetch('studio', 'https://managed-gemini.invalid/v1/chat/completions', init);
     assert.equal(response.headers.get('X-Gemini-Account-Chat-Mode'), 'nonstream');
+    assert.equal(response.headers.get('X-Gemini-Account-Request-Mode'), 'nonstream');
     assert.match(await response.text(), /OK/);
     assert.equal(calls, 2);
   } finally { await rm(directory, { recursive: true, force: true }); }
@@ -98,4 +100,20 @@ test('errors and malformed completions never become executable tools or trigger 
   controller.abort();
   await assert.rejects(pending, error => error.name === 'AbortError');
   assert.equal(cancelled, true);
+});
+
+test('diagnostic sender can preserve stream fields despite a saved nonstream setting', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'diagnostic-mode-'));
+  try {
+    await saveStudioChatMode(directory, 'nonstream');
+    const manager = new ManagedBackends({ directory }, { chatMode: async () => 'stream', forward: async (_url, init) => {
+      assert.equal(JSON.parse(init.body).stream, true);
+      return new Response('original stream');
+    } });
+    manager.ensure = async () => ({ baseURL: 'http://127.0.0.1:39999/v1', apiKey: 'fixture' });
+    const response = await manager.fetch('studio', 'https://managed-gemini.invalid/v1/chat/completions', { method: 'POST', body: JSON.stringify({ model: 'gemini-test', stream: true, messages: [] }) });
+    assert.equal(response.headers.get('X-Gemini-Account-Request-Mode'), 'stream');
+    assert.equal(await response.text(), 'original stream');
+    assert.equal(await studioChatMode(directory, {}), 'nonstream');
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });

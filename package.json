@@ -1,6 +1,6 @@
 {
   "name": "opencode-gemini-account",
-  "version": "0.8.2",
+  "version": "0.8.3-dev.0",
   "repository": { "type": "git", "url": "https://github.com/histrc/opencode-gemini-account.git" },
   "homepage": "https://github.com/histrc/opencode-gemini-account#readme",
   "bugs": { "url": "https://github.com/histrc/opencode-gemini-account/issues" },

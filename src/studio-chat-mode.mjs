@@ -28,6 +28,7 @@ export function nonstreamRequest(init) {
   delete body.stream_options;
   const headers = new Headers(init.headers);
   headers.delete('content-length');
+  headers.set('accept', 'application/json');
   return { ...init, headers, body: JSON.stringify(body) };
 }
 

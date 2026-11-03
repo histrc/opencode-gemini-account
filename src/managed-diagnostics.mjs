@@ -36,14 +36,20 @@ export function classifyFailure(status, body) {
   return 'HTTP_ERROR';
 }
 
-export async function managedFailureMessage(response) {
-  const kind = classifyFailure(response.status, await readBoundedJSON(response));
+export async function managedFailureMessage(response, context = {}) {
+  const body = await readBoundedJSON(response);
+  const kind = classifyFailure(response.status, body);
+  const raw = typeof body?.error?.message === 'string' ? body.error.message : '';
+  const protocol = /协议错误码\s*(\d{1,3})/.exec(raw)?.[1];
+  const model = typeof context.modelID === 'string' && /^gemini-[a-zA-Z0-9._-]{1,120}$/.test(context.modelID) ? context.modelID : undefined;
+  const mode = response.headers.get('X-Gemini-Account-Request-Mode');
+  const facts = [protocol && `协议码 ${Number(protocol)}`, model && `型号 ${model}`, ['stream', 'nonstream'].includes(mode) && `实际请求 ${mode}`].filter(Boolean).join('，');
   const detail = kind === 'GOOGLE_PERMISSION_DENIED'
-    ? 'Google 拒绝了当前请求（PERMISSION_DENIED）；不能仅据此判断为工具权限。最小工具对照已通过时，请运行原生请求差异诊断'
-    : kind === 'AUTHENTICATION_REQUIRED' ? '请检查账号登录状态'
-    : kind === 'RATE_LIMITED' ? '请求受到限流，请检查后端状态后稍后重试'
-    : '请检查账号和后端状态';
-  return `本机模型请求失败（HTTP ${response.status}）；${detail}。插件未自动重发。`;
+    ? 'Google 拒绝了当前请求（PERMISSION_DENIED）；账号就绪不代表此请求已获准'
+    : kind === 'AUTHENTICATION_REQUIRED' ? '本机接口或账号认证未通过'
+    : kind === 'RATE_LIMITED' ? '请求受到限流'
+    : '后端未完成当前请求';
+  return `本机模型请求失败（HTTP ${response.status}）；${detail}${facts ? `；${facts}` : ''}。插件未自动重发。`;
 }
 
 export function diagnosticRequest(model, withTools) {
@@ -119,27 +125,37 @@ async function diagnosticResponse(response) {
   return choices && finished ? 'ACCEPTED' : 'INCOMPLETE_STREAM';
 }
 
-export async function compareNativeRequest(manager, request, onResult = () => {}) {
+export async function compareNativeRequest(manager, request, onResult = () => {}, headers = { 'Content-Type': 'application/json' }) {
   const variants = nativeRequestVariants(request);
   const results = [];
-  for (const { name, body } of variants) {
+  async function send(name, body) {
     const started = Date.now();
     let row;
     try {
+      const requestHeaders = new Headers(headers);
+      if (name === 'nonstream' || name === 'nonstream_confirm') requestHeaders.set('accept', 'application/json');
       const response = await manager.fetch('studio', 'https://managed-gemini.invalid/v1/chat/completions', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(180000),
+        method: 'POST', headers: requestHeaders, body: JSON.stringify(body), signal: AbortSignal.timeout(180000),
       });
       row = { variant: name, http: response.status, result: await diagnosticResponse(response) };
     } catch (error) { row = { variant: name, result: error?.name === 'TimeoutError' ? 'TIMEOUT' : 'LOCAL_OR_CONNECTION_ERROR' }; }
     row.elapsedMs = Date.now() - started;
     results.push(row); onResult(row);
-    // A passing original means no request difference has been isolated. Otherwise
-    // stop at the first accepted variant to avoid unnecessary quota consumption.
-    if (row.result === 'ACCEPTED') break;
+    return row;
+  }
+  for (const { name, body } of variants) {
+    const row = await send(name, body);
+    if (row.result === 'ACCEPTED') {
+      if (name === 'original') return { model: request.model, results, conclusion: 'ORIGINAL_ACCEPTED_TOOL_LOOP_NOT_TESTED' };
+      // Recheck A then B. A single denied/accepted pair is not enough to ascribe
+      // transient Google errors to a changed parameter or recommend a workaround.
+      const originalAgain = await send('original_confirm', variants[0].body);
+      if (originalAgain.result !== 'GOOGLE_PERMISSION_DENIED') return { model: request.model, results, conclusion: originalAgain.result === 'ACCEPTED' ? 'UNSTABLE_PERMISSION_RESULT' : 'INCONCLUSIVE' };
+      const variantAgain = await send(name + '_confirm', body);
+      if (variantAgain.result === 'ACCEPTED') return { model: request.model, results, conclusion: 'REPEATED_VARIANT_ACCEPTED', candidateDifference: name };
+      return { model: request.model, results, conclusion: variantAgain.result === 'GOOGLE_PERMISSION_DENIED' ? 'UNSTABLE_PERMISSION_RESULT' : 'INCONCLUSIVE' };
+    }
     if (row.result !== 'GOOGLE_PERMISSION_DENIED') break;
   }
-  const accepted = results.find(row => row.result === 'ACCEPTED');
-  return { model: request.model, results, conclusion: accepted?.variant === 'original' ? 'ORIGINAL_ACCEPTED_TOOL_LOOP_NOT_TESTED'
-    : accepted ? 'ACCEPTED_VARIANT_REQUIRES_CONFIRMATION' : 'NO_ACCEPTED_VARIANT',
-    ...(accepted && accepted.variant !== 'original' ? { candidateDifference: accepted.variant } : {}) };
+  return { model: request.model, results, conclusion: 'NO_ACCEPTED_VARIANT' };
 }

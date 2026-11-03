@@ -17,7 +17,7 @@
 3. 根据账号连接说明操作。首次使用自动下载对应后端；按需完成 Google 账号连接。模型列表会在连接完成后刷新。
 4. 在 **/models** 选择该入口的型号，先发一条短消息。编程任务优先选择 AI Studio。
 
-两个 Provider 互相独立，不必同时连接。可双击 connect-studio.cmd 连接 AI Studio，再双击 test-call.cmd 发一条真实 Reply only OK.。
+两个 Provider 互相独立，不必同时连接。可双击 connect-studio.cmd 连接 AI Studio。日常直接在 OpenCode 选择型号使用，无需先运行开发验收；可选的短调用检查必须显式指定实际型号。
 
 0.8.0 已接入 AI Studio 生图和参考图编辑。完成上述安装和登录即可使用，无需额外配置。保持聊天模型为 Flash Lite、Argon 等对话型号，发送“请用 gemini_generate_image，用 Nano Banana 2 Lite 生成一幅水彩风景画，1:1、1K”。可以改为其他实际可用的生图型号；详情见 IMAGE_GENERATION.md。
 
@@ -56,23 +56,23 @@ node scripts/diagnose-tools.mjs --live --model gemini-3.5-flash-lite
 
 ### 最小工具声明成功、真实 OpenCode 首轮失败
 
-0.8.2 包含实际首轮请求的差异诊断。旧的 0.8.1 发行包需先应用诊断更新包，或更新到 0.8.2，再执行：
+这是开发者诊断入口，不属于正常安装要求。开发候选修正了对照受保存的非流式配置影响的问题；0.8.2 及更早版本的单次成功结果不足以推荐修改设置。开发者在显式接受诊断调用额度后执行：
 
 ```powershell
-node scripts/verify-managed.mjs --live --diagnose-request
+node scripts/verify-managed.mjs --live --model 实际聊天型号ID --diagnose-request
 ```
 
-命令在临时测试项目中截取真实 OpenCode 首轮请求，截取时阻止生成和工具执行，读取后移除临时请求文件。诊断随后使用同一数据目录、同一型号请求后端，依次检查原始请求、非流式、移除输出上限、简化工具参数 Schema、短消息、移除工具。每个变体都基于原始请求独立构造，不累计修改；不会执行模型返回的工具。最多六条生成请求，遇到首个被接受的版本或非权限类失败即停止。
+命令在临时测试项目中截取真实 OpenCode 首轮请求及必要的内容类型、Accept 请求头，截取时阻止生成和工具执行，读取后移除临时请求文件。诊断随后使用同一数据目录、同一型号请求后端，依次检查原始请求、非流式、移除输出上限、简化工具参数 Schema、短消息、移除工具。每个变体都基于原始请求独立构造，不累计修改；不会执行模型返回的工具。诊断保留各变体自身的 stream 字段，暂不采用已保存的兼容改写，不修改正式配置。发现首个被接受的变体后，再次发送原始请求与该变体确认观察是否重复；最多八条生成请求，遇到非权限类失败停止。
 
-输出只包含宿主版本、模型 ID、流式开关、输出上限、工具与消息数量、HTTP 状态和固定分类，不显示提示词、工具参数详情、账号或凭据，不自动上传结果。`candidateDifference` 只表示一次对照中出现的候选差异，仍需复验，不能排除账号调度、会话或服务状态变化。`ORIGINAL_ACCEPTED_TOOL_LOOP_NOT_TESTED` 表示原始请求单独重放被接受，尚未定位差异，也不能代替编程闭环验收。此模式不改变正式插件的工具、输出上限或流式策略。
+输出只包含宿主版本、模型 ID、流式开关、输出上限、工具与消息数量、HTTP 状态和固定分类，不显示提示词、工具参数详情、账号或凭据，不自动上传结果。`UNSTABLE_PERMISSION_RESULT` 表示重复对照结果变化，不能据此推荐兼容设置；`REPEATED_VARIANT_ACCEPTED` 仅表示两组成对观察重复，仍不能排除调度、会话或服务状态变化。`ORIGINAL_ACCEPTED_TOOL_LOOP_NOT_TESTED` 表示原始请求单独重放被接受，尚未定位差异，也不能代替编程闭环验收。此模式不改变正式插件的工具、输出上限或流式策略。
 
 ## 可选的非流式兼容模式
 
-如果同一实际请求在 `original` 下被拒绝、在 `nonstream` 下被接受，可在 0.8.2 插件目录执行：
+这是开发者控制的兼容选项。仅凭同一实际请求在 `original` 下被拒绝、在 `nonstream` 下被接受的一次观察，不足以推荐修改。经过重复成对对照、进一步排除会话或调度变化后，才评估是否使用以下选项：
 
 ```powershell
 node scripts/managed.mjs chat-mode studio nonstream
-npm.cmd run verify:managed
+npm.cmd run verify:managed -- --model 实际聊天型号ID
 ```
 
 第一条只保存模式，不发送生成请求；第二条用真实 OpenCode 在临时项目中验证读文件、改文件和执行命令，会使用模型额度。更新源码后需重启桌面 OpenCode，以加载新代码。已有 0.8.1 安装可将新版源码合并覆盖到原插件目录，保留已安装依赖与本机数据定位文件；此版本依赖未变。
@@ -99,7 +99,7 @@ node scripts/managed.mjs chat-mode studio stream
 
 仅写入 managed-network.json 不能保证已经启动的进程采用新代理；已有进程可能继续沿用启动时的环境。此流程通过停止和启动本插件的后端使代理进入实际运行配置。proxyApplied:true 仅表示运行配置地址已核对，不等于 Google 403 已解决。
 
-应用成功后，双击入口会自动运行临时项目的真实工具闭环验收，使用模型额度；随后运行已安装的只读检查器生成过滤后的报告。代理不是 API 转接服务，此操作也不切换代理软件的全局节点。若端口不同，可在插件目录运行 node scripts/apply-studio-proxy.mjs http://127.0.0.1:实际端口；请使用本人确认的地址，不要直接套用其他机器的端口。
+代理应用入口只应用配置、等待就绪并生成只读摘要，不再自动发送模型验收请求。代理不是 API 转接服务，此操作也不切换代理软件的全局节点。若端口不同，可在插件目录运行 node scripts/apply-studio-proxy.mjs http://127.0.0.1:实际端口；请使用本人确认的地址，不要直接套用其他机器的端口。
 
 ## 等待后端就绪并验收 Flash 3.8（补充包）
 

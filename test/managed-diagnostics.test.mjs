@@ -32,11 +32,14 @@ test('other 403s are not labelled as Google tool permissions and accepted reques
 });
 
 test('runtime error uses fixed safe guidance without exposing upstream contents', async () => {
-  const text = await managedFailureMessage(Response.json({ error: { message: 'The caller does not have permission; Bearer secret@example.invalid' } }, { status: 403 }));
+  const text = await managedFailureMessage(Response.json({ error: { message: 'AI Studio GenerateContent 返回 HTTP 403、协议错误码 7: The caller does not have permission; Bearer secret@example.invalid' } }, { status: 403, headers: { 'X-Gemini-Account-Request-Mode': 'nonstream' } }), { modelID: 'gemini-test' });
   assert.match(text, /PERMISSION_DENIED/);
-  assert.match(text, /不能仅据此判断为工具权限/);
+  assert.match(text, /协议码 7/);
+  assert.match(text, /型号 gemini-test/);
+  assert.match(text, /实际请求 nonstream/);
+  assert.doesNotMatch(text, /请运行|对照诊断/);
   assert.doesNotMatch(text, /Bearer|example/);
-  assert.match(await managedFailureMessage(new Response('private raw body', { status: 403 })), /检查账号和后端状态/);
+  assert.match(await managedFailureMessage(new Response('private raw body', { status: 403 })), /后端未完成当前请求/);
 });
 
 test('error inspection cancels oversized and stalled streams', async () => {
@@ -54,14 +57,15 @@ const native = () => ({ ...diagnosticRequest('gemini-test', true), stream: true,
 const denied = () => Response.json({ error: { message: 'The caller does not have permission secret@example.invalid' } }, { status: 403 });
 const accepted = () => Response.json({ choices: [{ message: { content: 'private response' } }] });
 
-test('native comparisons preserve the captured request and stop at the first accepted variation', async () => {
+test('native comparisons preserve captured requests and require a repeated paired observation', async () => {
   const original = native(), snapshot = structuredClone(original), calls = [];
   const report = await compareNativeRequest({ fetch: async (_backend, _url, init) => {
     const request = JSON.parse(init.body); calls.push(request);
-    return calls.length < 3 ? denied() : accepted();
+    return [1, 2, 4].includes(calls.length) ? denied() : accepted();
   } }, original);
   assert.deepEqual(original, snapshot);
-  assert.equal(calls.length, 3);
+  assert.equal(calls.length, 5);
+  assert.equal(report.conclusion, 'REPEATED_VARIANT_ACCEPTED');
   assert.equal(report.candidateDifference, 'without_output_limit');
   assert.equal(calls[0].stream, true);
   assert.equal(calls[1].stream, false);
@@ -90,7 +94,22 @@ test('native diagnostics require a completed SSE response and never execute retu
       } }), { headers: { 'Content-Type': 'text/event-stream' } });
     } }, native());
     assert.equal(report.results[0].result, expected);
-    assert.equal(calls, expected === 'GOOGLE_PERMISSION_DENIED' ? 2 : 1);
+    assert.equal(calls, expected === 'GOOGLE_PERMISSION_DENIED' ? 3 : 1);
     assert.doesNotMatch(JSON.stringify(report), /private|arguments/);
+  }
+});
+
+test('intermittent 403s cannot be presented as a streaming workaround', async () => {
+  for (const pattern of [[403, 200, 403, 403], [403, 200, 200]]) {
+    let calls = 0;
+    const report = await compareNativeRequest({ fetch: async (_backend, _url, init) => {
+      const status = pattern[calls++];
+      assert.ok(status !== undefined, 'must stop when results become unstable');
+      if (calls === 2) assert.equal(new Headers(init.headers).get('accept'), 'application/json');
+      return status === 403 ? denied() : accepted();
+    } }, native(), () => {}, { Accept: 'text/event-stream', 'Content-Type': 'application/json' });
+    assert.equal(report.conclusion, 'UNSTABLE_PERMISSION_RESULT');
+    assert.equal(report.candidateDifference, undefined);
+    assert.equal(calls, pattern.length);
   }
 });

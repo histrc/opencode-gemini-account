@@ -20,9 +20,11 @@ try {
   const provider = legacy ? 'gemini-account' : MANAGED_PROVIDERS[backend];
   let model = `${provider}/${backend}-current`;
   if (!legacy && action === 'smoke') {
+    const modelID = process.env.GEMINI_ACCOUNT_VERIFY_MODEL?.trim();
+    if (!modelID) throw new Error('此可选短调用需显式设置 GEMINI_ACCOUNT_VERIFY_MODEL；日常可直接在 OpenCode 选择型号使用，未发送生成请求');
     const catalog = await new ManagedBackends(settings).catalog(backend, { install: true });
-    const modelID = catalog['gemini-3.5-flash-lite'] ? 'gemini-3.5-flash-lite' : Object.keys(catalog)[0];
-    if (!modelID) throw new Error('尚未发现可用模型，请先完成账号连接');
+    if (!Object.hasOwn(catalog, modelID)) throw new Error('指定型号未列在当前提供商目录中，未发送生成请求');
+    if (catalog[modelID]?.capabilities?.output?.image) throw new Error('短调用需要对话型号，图片型号应由生图入口调用；未发送生成请求');
     model = `${provider}/${modelID}`;
   }
   const cwd = path.join(settings.directory, 'smoke-project');

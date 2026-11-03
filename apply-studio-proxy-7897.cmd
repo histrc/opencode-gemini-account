@@ -7,7 +7,6 @@ node scripts\apply-studio-proxy.mjs http://127.0.0.1:7897
 if errorlevel 1 goto report
 node scripts\wait-studio-ready.mjs
 if errorlevel 1 goto report
-node scripts\verify-managed.mjs --live
 :report
 if exist scripts\inspect-studio.mjs node scripts\inspect-studio.mjs
 popd

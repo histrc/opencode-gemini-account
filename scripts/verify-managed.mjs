@@ -7,14 +7,15 @@ import { resolveOpenCode } from '../src/opencode-command.mjs';
 import { runProcess } from './verify.mjs';
 import { compareNativeRequest } from '../src/managed-diagnostics.mjs';
 import { studioChatMode } from '../src/studio-chat-mode.mjs';
+import { verificationOptions } from '../src/verification-options.mjs';
 
-if (!process.argv.includes('--live')) throw new Error('此验收会消耗真实模型额度，请使用 --live');
-const diagnose = process.argv.includes('--diagnose-request');
+const { model, diagnoseRequest: diagnose } = verificationOptions(process.argv.slice(2));
 const settings = await loadSettings();
 const chatMode = await studioChatMode(settings.directory);
-const manager = new ManagedBackends(settings);
+// Diagnostic comparisons must preserve each variant's stream field, even when
+// the saved compatibility setting would otherwise rewrite all of them.
+const manager = new ManagedBackends(settings, diagnose ? { chatMode: async () => 'stream' } : {});
 const catalog = await manager.catalog('studio', { install: true });
-const model = process.env.GEMINI_ACCOUNT_VERIFY_MODEL || 'gemini-3.5-flash-lite';
 if (!catalog[model]?.capabilities?.toolcall) throw new Error('后端目录未确认验收型号支持原生工具调用');
 const base = path.join(settings.directory, 'managed-verification');
 await mkdir(base, { recursive: true });
@@ -27,7 +28,8 @@ const captureWrapper = `import { ManagedBackends } from ${JSON.stringify(new URL
 import { writeFile } from 'node:fs/promises';
 ManagedBackends.prototype.fetch = async function(backend, input, init) {
   if (backend === 'studio' && new URL(input).pathname === '/v1/chat/completions') {
-    await writeFile(${JSON.stringify(capturedFile)}, init.body, { flag: 'wx', mode: 0o600 });
+    const headers = new Headers(init.headers);
+    await writeFile(${JSON.stringify(capturedFile)}, JSON.stringify({ request: JSON.parse(init.body), headers: { 'Content-Type': headers.get('content-type') || 'application/json', ...(headers.get('accept') ? { Accept: headers.get('accept') } : {}) } }), { flag: 'wx', mode: 0o600 });
   }
   return Response.json({error:{message:'Local diagnostic capture; not sent upstream'}},{status:400});
 };
@@ -62,7 +64,7 @@ function event(line) {
     console.log(`原生工具 ${item.part.tool} 已完成`);
   }
 }
-console.log(diagnose ? '正在截取临时项目的 OpenCode 首轮请求；截取阶段不发生成请求、不执行工具。' : `开始真实 OpenCode 原生工具闭环（仅在临时测试项目操作；chatMode=${chatMode}）。`);
+console.log(diagnose ? '正在截取临时项目的 OpenCode 首轮请求；截取阶段不发生成请求、不执行工具。' : `开始真实 OpenCode 原生工具闭环（仅在临时测试项目操作；model=${model}；chatMode=${chatMode}）。`);
 const run = await runProcess(command.file, [...command.prefix, 'run', '--standalone', '--model', providerModel, '--agent', 'managed-verify', '--format', 'json', '--title', 'Managed backend baseline', 'Use read on calculator.cjs, then edit to fix addition, then shell to run exactly node check.cjs. Report the actual test token.'], {
   env, cwd: project, timeoutMs: 240000,
   stdout(chunk) { pending += chunk; let index; while ((index = pending.indexOf('\n')) >= 0) { event(pending.slice(0, index)); pending = pending.slice(index + 1); } },
@@ -77,13 +79,13 @@ if (diagnose) {
   let version = '';
   const acceptVersion = chunk => { version += chunk; };
   await runProcess(command.file, [...command.prefix, '--version'], { stdout: acceptVersion, stderr: acceptVersion });
-  console.log(JSON.stringify({ hostVersion: /\b\d+\.\d+\.\d+\b/.exec(version)?.[0] ?? 'unknown', model: request.model, stream: request.stream === true,
-    outputLimit: request.max_completion_tokens ?? request.max_tokens ?? null, toolCount: request.tools?.length ?? 0, messageCount: request.messages?.length ?? 0 }));
-  console.log('将对实际首轮请求逐项对照，最多六条生成请求；遇到首个可接受版本即停止。不执行模型返回的工具，不改正式请求策略。');
-  const report = await compareNativeRequest(manager, request, row => console.log(JSON.stringify(row)));
+  console.log(JSON.stringify({ hostVersion: /\b\d+\.\d+\.\d+\b/.exec(version)?.[0] ?? 'unknown', model: request.request.model, stream: request.request.stream === true,
+    outputLimit: request.request.max_completion_tokens ?? request.request.max_tokens ?? null, toolCount: request.request.tools?.length ?? 0, messageCount: request.request.messages?.length ?? 0 }));
+  console.log('将对实际首轮请求逐项对照，最多八条生成请求；首次差异还需成对复查。诊断不采用已保存的非流式改写，不执行返回的工具，不修改正式配置。');
+  const report = await compareNativeRequest(manager, request.request, row => console.log(JSON.stringify(row)), request.headers);
   console.log(JSON.stringify({ conclusion: report.conclusion, candidateDifference: report.candidateDifference }));
   console.log('单次对照不能排除服务状态变化；ACCEPTED 不代表编程闭环成功。原始请求已从临时文件移除，结果不自动上传。');
-  if (!report.results.some(row => row.result === 'ACCEPTED')) process.exitCode = 1;
+  if (!['ORIGINAL_ACCEPTED_TOOL_LOOP_NOT_TESTED', 'REPEATED_VARIANT_ACCEPTED'].includes(report.conclusion)) process.exitCode = 1;
   process.exit(process.exitCode ?? 0);
 }
 const hash = value => createHash('sha256').update(value).digest('hex');

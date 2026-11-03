@@ -8,6 +8,8 @@ import { importCookie, parseCookieInput, validateProxyURL } from '../vendor/magp
 import { prepareCamoufox } from './camoufox-install.mjs';
 import { managedStudioProxy } from './studio-network.mjs';
 import { studioChatMode, nonstreamRequest, completionAsSSE } from './studio-chat-mode.mjs';
+import { assertPreviewDirectory } from './backend-preview.mjs';
+import studioRelease from '../vendor/magpie/lib/studio-release.json' with { type: 'json' };
 
 export const MANAGED_PROVIDERS = { studio: 'aistudio-account', web: 'gemini-web-account' };
 
@@ -22,7 +24,7 @@ export function studioConnectionError(error) {
 export class ManagedBackends {
   constructor(settings, studio = {}) {
     this.settings = settings;
-    this.studio = { accounts: studioAccounts, admin: studioAdmin, prepareBrowser: prepareCamoufox, fetch: globalThis.fetch, forward, ...studio };
+    this.studio = { accounts: studioAccounts, admin: studioAdmin, prepareBrowser: prepareCamoufox, fetch: globalThis.fetch, forward, chatMode: studioChatMode, ...studio };
     // These optional overrides are for explicit migrations and acceptance tests.
     // A fresh installation always owns both directories below its own data root.
     this.directories = {
@@ -44,6 +46,7 @@ export class ManagedBackends {
 
   async ensure(backend, managementOnly = false) {
     if (!Object.hasOwn(MANAGED_PROVIDERS, backend)) throw new Error('未知后端');
+    if (backend === 'studio') await assertPreviewDirectory(this.directories.studio, studioRelease.version);
     const key = backend + ':' + managementOnly;
     if (this.pending.has(key)) return this.pending.get(key);
     const promise = (async () => {
@@ -119,7 +122,7 @@ export class ManagedBackends {
     const image = /^\/v1beta\/models\/(gemini-[a-zA-Z0-9._-]+):generateContent$/.exec(proxyURL.pathname);
     if (image && backend === 'studio') return this.fetchImage(image[1], init);
     if (proxyURL.pathname !== '/v1/chat/completions') throw new Error('不支持的模型调用路径');
-    const buffered = backend === 'studio' && await studioChatMode(this.settings.directory) === 'nonstream' ? nonstreamRequest(init) : null;
+    const buffered = backend === 'studio' && await this.studio.chatMode(this.settings.directory) === 'nonstream' ? nonstreamRequest(init) : null;
     const local = await this.ensure(backend);
     const auth = { type: 'api', key: local.apiKey, metadata: { baseURL: local.baseURL, ...(backend === 'studio' ? { mode: 'studio' } : {}) } };
     const options = backend === 'studio'
@@ -128,7 +131,13 @@ export class ManagedBackends {
     // Default requests keep upstream SSE. The explicit compatibility mode sends
     // one non-streaming request and adapts its completed text/tools for the host.
     const response = await (backend === 'studio' ? this.studio.forward : forward)(local.baseURL + '/chat/completions', buffered ?? init, async () => auth, options);
-    return buffered ? completionAsSSE(response, init.signal) : response;
+    const result = buffered ? await completionAsSSE(response, init.signal) : response;
+    if (backend !== 'studio') return result;
+    let requestMode = 'unknown';
+    try { requestMode = JSON.parse((buffered ?? init).body).stream === true ? 'stream' : 'nonstream'; } catch {}
+    const headers = new Headers(result.headers);
+    headers.set('X-Gemini-Account-Request-Mode', requestMode);
+    return new Response(result.body, { status: result.status, statusText: result.statusText, headers });
   }
 
   async fetchImage(modelID, init) {
