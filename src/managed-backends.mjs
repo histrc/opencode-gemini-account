@@ -8,6 +8,7 @@ import { importCookie, parseCookieInput, validateProxyURL } from '../vendor/magp
 import { prepareCamoufox } from './camoufox-install.mjs';
 import { managedStudioProxy } from './studio-network.mjs';
 import { studioChatMode, nonstreamRequest, completionAsSSE } from './studio-chat-mode.mjs';
+import { compactManagedRequest } from './managed-context.mjs';
 
 export const MANAGED_PROVIDERS = { studio: 'aistudio-account', web: 'gemini-web-account' };
 
@@ -119,7 +120,8 @@ export class ManagedBackends {
     const image = /^\/v1beta\/models\/(gemini-[a-zA-Z0-9._-]+):generateContent$/.exec(proxyURL.pathname);
     if (image && backend === 'studio') return this.fetchImage(image[1], init);
     if (proxyURL.pathname !== '/v1/chat/completions') throw new Error('不支持的模型调用路径');
-    const buffered = backend === 'studio' && await studioChatMode(this.settings.directory) === 'nonstream' ? nonstreamRequest(init) : null;
+    const prepared = backend === 'studio' ? await compactManagedRequest(init, this.settings.directory) : init;
+    const buffered = backend === 'studio' && await studioChatMode(this.settings.directory) === 'nonstream' ? nonstreamRequest(prepared) : null;
     const local = await this.ensure(backend);
     const auth = { type: 'api', key: local.apiKey, metadata: { baseURL: local.baseURL, ...(backend === 'studio' ? { mode: 'studio' } : {}) } };
     const options = backend === 'studio'
@@ -127,7 +129,7 @@ export class ManagedBackends {
       : webSettings({ baseURL: local.baseURL, allowTools: true, allowImages: true });
     // Default requests keep upstream SSE. The explicit compatibility mode sends
     // one non-streaming request and adapts its completed text/tools for the host.
-    const response = await (backend === 'studio' ? this.studio.forward : forward)(local.baseURL + '/chat/completions', buffered ?? init, async () => auth, options);
+    const response = await (backend === 'studio' ? this.studio.forward : forward)(local.baseURL + '/chat/completions', buffered ?? prepared, async () => auth, options);
     return buffered ? completionAsSSE(response, init.signal) : response;
   }
 

@@ -87,6 +87,26 @@ node scripts/managed.mjs chat-mode studio stream
 
 开发和验收可用环境变量 GEMINI_ACCOUNT_STUDIO_CHAT_MODE=stream 或 nonstream 临时覆盖保存值。该模式仅适配 AI Studio 对话及原生函数调用；图片请求仍使用原有 generateContent 路径，图片 403 需单独诊断。兼容模式的错误、取消和无效响应不会触发插件自动重试，也不承诺解决账号资格或全部 403。
 
+## 可选的长对话本地压缩
+
+AI Studio 账号的上下文窗口和套餐限额均由 Google 控制。本地压缩不能解除已经产生的 429 或提高服务端上限；它用于减少长时间编程会话每轮重复发送的旧消息和冗长工具说明。压缩不额外调用模型、不自动重发请求，也不删除工具、参数类型、必填项或枚举。
+
+在插件数据目录创建 `managed-context.json`：
+
+```json
+{
+  "enabled": true,
+  "triggerMessages": 120,
+  "keepRecentMessages": 80,
+  "summaryMaxChars": 24000,
+  "messageExcerptChars": 900,
+  "toolDescriptionMaxChars": 800,
+  "schemaDescriptionMaxChars": 240
+}
+```
+
+达到消息阈值后，插件保留 system/developer 指令和最近完整用户轮次，把更早的用户/助手文本压为一条带明确标记的确定性摘要，旧工具输出只保留工具标识。压缩边界从用户消息开始，避免留下不配对的工具结果。真实源码、当前文件和最近完整消息仍应作为事实来源。删除该文件或把 `enabled` 改为 `false` 即可关闭；修改插件代码后需重启 OpenCode。
+
 ## 后端只读检查（补充包）
 
 若账号就绪、最小请求能通过，但正式请求在流式和非流式下仍被拒绝，可把只读检查补充包解压到插件根目录，双击 inspect-studio.cmd。检查器核对 0.8.2 核心文件是否完整覆盖、OpenCode CLI 版本、后端运行引擎、通道、配置待重启状态、账号能力摘要和最近八条账本记录；只调用本机查询接口，不发生成请求、不刷新 Google 登录。
